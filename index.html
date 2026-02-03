@@ -168,6 +168,7 @@
             <p><strong>File name:</strong> <span id="fileName"></span></p>
             <p><strong>File size:</strong> <span id="fileSize"></span></p>
             <p><strong>Total chunks:</strong> <span id="totalChunks"></span></p>
+            <p><strong>CRC32 Checksum:</strong> <span id="fileCRC32" style="font-family: monospace; color: #2196F3;"></span></p>
         </div>
 
         <div class="controls">
@@ -190,6 +191,7 @@
         let currentChunkIndex = 0;
         let intervalId = null;
         let isPaused = false;
+        let fileCRC32 = null;
 
         const fileInput = document.getElementById('fileInput');
         const startBtn = document.getElementById('startBtn');
@@ -209,6 +211,26 @@
         prevBtn.addEventListener('click', showPreviousChunk);
         nextBtn.addEventListener('click', showNextChunk);
 
+        // CRC32 calculation function
+        function calculateCRC32(data) {
+            const table = [];
+            for (let i = 0; i < 256; i++) {
+                let crc = i;
+                for (let j = 0; j < 8; j++) {
+                    crc = (crc & 1) ? (0xEDB88320 ^ (crc >>> 1)) : (crc >>> 1);
+                }
+                table[i] = crc;
+            }
+
+            let crc = 0xFFFFFFFF;
+            for (let i = 0; i < data.length; i++) {
+                const byte = data[i];
+                crc = table[(crc ^ byte) & 0xFF] ^ (crc >>> 8);
+            }
+
+            return ((crc ^ 0xFFFFFFFF) >>> 0).toString(16).padStart(8, '0');
+        }
+
         function handleFileSelect(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -224,6 +246,9 @@
         function processFile(file) {
             const chunkSize = parseInt(document.getElementById('chunkSize').value);
 
+            // Calculate CRC32 for the entire file
+            fileCRC32 = calculateCRC32(fileData);
+
             // Split file into chunks
             chunks = [];
             for (let i = 0; i < fileData.length; i += chunkSize) {
@@ -235,6 +260,7 @@
             document.getElementById('fileName').textContent = file.name;
             document.getElementById('fileSize').textContent = formatFileSize(file.size);
             document.getElementById('totalChunks').textContent = chunks.length;
+            document.getElementById('fileCRC32').textContent = fileCRC32.toUpperCase();
             fileInfo.style.display = 'block';
 
             // Enable start button
@@ -332,6 +358,11 @@
                 total: chunks.length,
                 data: base64Data
             };
+
+            // Include CRC32 in the first packet
+            if (index === 0 && fileCRC32) {
+                metadata.crc32 = fileCRC32;
+            }
 
             // Convert metadata to JSON string
             const qrData = JSON.stringify(metadata);
