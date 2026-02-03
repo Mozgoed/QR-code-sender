@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File to QR Code Sender</title>
+    <script type='text/javascript' src='qrcode.js'></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+
+        .file-input-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 2px dashed #ccc;
+            border-radius: 5px;
+            text-align: center;
+        }
+
+        #fileInput {
+            margin: 10px 0;
+        }
+
+        .info-section {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f0f0f0;
+            border-radius: 5px;
+        }
+
+        .info-section p {
+            margin: 5px 0;
+        }
+
+        #qr {
+            text-align: center;
+            margin: 20px 0;
+            min-height: 300px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin: 20px 0;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+
+        button.pause {
+            background-color: #ff9800;
+        }
+
+        button.pause:hover {
+            background-color: #e68900;
+        }
+
+        .settings {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #e8f5e9;
+            border-radius: 5px;
+        }
+
+        .settings label {
+            display: inline-block;
+            width: 200px;
+            margin: 5px 0;
+        }
+
+        .settings input[type="number"] {
+            width: 100px;
+            padding: 5px;
+        }
+
+        .settings select {
+            width: 110px;
+            padding: 5px;
+        }
+
+        .settings input[type="checkbox"] {
+            margin-left: 0;
+        }
+
+        .progress {
+            margin: 10px 0;
+            font-weight: bold;
+            font-size: 18px;
+            text-align: center;
+            color: #4CAF50;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>File to QR Code Sender</h1>
+
+        <div class="file-input-section">
+            <h3>Select a file to send</h3>
+            <input type="file" id="fileInput" />
+        </div>
+
+        <div class="settings">
+            <h3>Settings</h3>
+            <div>
+                <label>Chunk size (bytes):</label>
+                <input type="number" id="chunkSize" value="1000" min="100" max="2000" />
+            </div>
+            <div>
+                <label>Display interval (ms):</label>
+                <input type="number" id="displayInterval" value="2000" min="500" max="10000" />
+            </div>
+            <div>
+                <label>Error correction level:</label>
+                <select id="errorCorrection">
+                    <option value="L">L (Low - 7%)</option>
+                    <option value="M">M (Medium - 15%)</option>
+                    <option value="Q">Q (Quartile - 25%)</option>
+                    <option value="H">H (High - 30%)</option>
+                </select>
+            </div>
+            <div>
+                <label>Cycle transmission:</label>
+                <input type="checkbox" id="cycleTransmission" checked />
+            </div>
+        </div>
+
+        <div class="info-section" id="fileInfo" style="display: none;">
+            <h3>File Information</h3>
+            <p><strong>File name:</strong> <span id="fileName"></span></p>
+            <p><strong>File size:</strong> <span id="fileSize"></span></p>
+            <p><strong>Total chunks:</strong> <span id="totalChunks"></span></p>
+        </div>
+
+        <div class="controls">
+            <button id="startBtn" disabled>Start / Restart</button>
+            <button id="pauseBtn" class="pause" disabled>Pause</button>
+            <button id="prevBtn" disabled>Previous</button>
+            <button id="nextBtn" disabled>Next</button>
+        </div>
+
+        <div class="progress" id="progress"></div>
+
+        <div id="qr">
+            <p style="color: #999;">Select a file to begin</p>
+        </div>
+    </div>
+
+    <script>
+        let fileData = null;
+        let chunks = [];
+        let currentChunkIndex = 0;
+        let intervalId = null;
+        let isPaused = false;
+
+        const fileInput = document.getElementById('fileInput');
+        const startBtn = document.getElementById('startBtn');
+        const pauseBtn = document.getElementById('pauseBtn');
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        const qrDiv = document.getElementById('qr');
+        const fileInfo = document.getElementById('fileInfo');
+        const progress = document.getElementById('progress');
+
+        // File selection handler
+        fileInput.addEventListener('change', handleFileSelect);
+
+        // Control button handlers
+        startBtn.addEventListener('click', startTransmission);
+        pauseBtn.addEventListener('click', togglePause);
+        prevBtn.addEventListener('click', showPreviousChunk);
+        nextBtn.addEventListener('click', showNextChunk);
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                fileData = new Uint8Array(e.target.result);
+                processFile(file);
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function processFile(file) {
+            const chunkSize = parseInt(document.getElementById('chunkSize').value);
+
+            // Split file into chunks
+            chunks = [];
+            for (let i = 0; i < fileData.length; i += chunkSize) {
+                const chunk = fileData.slice(i, i + chunkSize);
+                chunks.push(chunk);
+            }
+
+            // Update UI
+            document.getElementById('fileName').textContent = file.name;
+            document.getElementById('fileSize').textContent = formatFileSize(file.size);
+            document.getElementById('totalChunks').textContent = chunks.length;
+            fileInfo.style.display = 'block';
+
+            // Enable start button
+            startBtn.disabled = false;
+            currentChunkIndex = 0;
+
+            // Show first chunk
+            displayChunk(0);
+        }
+
+        function startTransmission() {
+            if (!fileData) return;
+
+            // Stop current transmission if running
+            if (intervalId) {
+                clearInterval(intervalId);
+                intervalId = null;
+            }
+
+            // Recalculate chunks based on current chunk size
+            const chunkSize = parseInt(document.getElementById('chunkSize').value);
+            chunks = [];
+            for (let i = 0; i < fileData.length; i += chunkSize) {
+                const chunk = fileData.slice(i, i + chunkSize);
+                chunks.push(chunk);
+            }
+
+            // Update total chunks display
+            document.getElementById('totalChunks').textContent = chunks.length;
+
+            currentChunkIndex = 0;
+            isPaused = false;
+            pauseBtn.textContent = 'Pause';
+
+            pauseBtn.disabled = false;
+            prevBtn.disabled = false;
+            nextBtn.disabled = false;
+
+            const interval = parseInt(document.getElementById('displayInterval').value);
+
+            displayChunk(currentChunkIndex);
+
+            intervalId = setInterval(() => {
+                if (!isPaused) {
+                    currentChunkIndex++;
+                    if (currentChunkIndex >= chunks.length) {
+                        const shouldCycle = document.getElementById('cycleTransmission').checked;
+                        if (shouldCycle) {
+                            currentChunkIndex = 0; // Loop back to start
+                            displayChunk(currentChunkIndex);
+                        } else {
+                            // Stop transmission when finished
+                            clearInterval(intervalId);
+                            intervalId = null;
+                            pauseBtn.disabled = true;
+                            pauseBtn.textContent = 'Pause';
+                            isPaused = false;
+                            progress.textContent = `Transmission completed! (${chunks.length} chunks sent)`;
+                        }
+                    } else {
+                        displayChunk(currentChunkIndex);
+                    }
+                }
+            }, interval);
+        }
+
+        function togglePause() {
+            isPaused = !isPaused;
+            pauseBtn.textContent = isPaused ? 'Resume' : 'Pause';
+        }
+
+        function showPreviousChunk() {
+            if (currentChunkIndex > 0) {
+                currentChunkIndex--;
+                displayChunk(currentChunkIndex);
+            }
+        }
+
+        function showNextChunk() {
+            if (currentChunkIndex < chunks.length - 1) {
+                currentChunkIndex++;
+                displayChunk(currentChunkIndex);
+            }
+        }
+
+        function displayChunk(index) {
+            if (!chunks[index]) return;
+
+            // Convert chunk to base64
+            const base64Data = arrayBufferToBase64(chunks[index]);
+
+            // Create metadata object
+            const metadata = {
+                index: index,
+                total: chunks.length,
+                data: base64Data
+            };
+
+            // Convert metadata to JSON string
+            const qrData = JSON.stringify(metadata);
+
+            // Generate QR code
+            try {
+                const errorCorrectionLevel = document.getElementById('errorCorrection').value;
+                let qr = qrcode(0, errorCorrectionLevel);
+                qr.addData(qrData);
+                qr.make();
+                qrDiv.innerHTML = qr.createImgTag(5);
+            } catch (error) {
+                console.error('Error generating QR code:', error);
+                qrDiv.innerHTML = `<p style="color: red;">Error: Chunk too large for QR code. Try reducing chunk size or lowering error correction level.</p>`;
+            }
+
+            // Update progress
+            progress.textContent = `Chunk ${index + 1} of ${chunks.length}`;
+        }
+
+        function arrayBufferToBase64(buffer) {
+            let binary = '';
+            const bytes = new Uint8Array(buffer);
+            for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return btoa(binary);
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' bytes';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+        }
+    </script>
+</body>
+</html>
