@@ -1,0 +1,820 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Code File Receiver</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        @media (max-width: 968px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        .card h2 {
+            font-size: 1.5rem;
+            margin-bottom: 20px;
+            color: #333;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .scanner-container {
+            position: relative;
+            width: 100%;
+            min-height: 400px;
+            background: #f5f5f5;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        #qr-reader {
+            width: 100%;
+        }
+
+        .scanner-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            font-size: 1.2rem;
+            z-index: 10;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+
+        .status-idle {
+            background: #e3e3e3;
+            color: #666;
+        }
+
+        .status-scanning {
+            background: #fef3c7;
+            color: #92400e;
+            animation: pulse 2s infinite;
+        }
+
+        .status-completed {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-error {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-item {
+            background: #f9fafb;
+            padding: 15px;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+        }
+
+        .stat-label {
+            font-size: 0.85rem;
+            color: #6b7280;
+            margin-bottom: 5px;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #1f2937;
+        }
+
+        .progress-section {
+            margin-bottom: 20px;
+        }
+
+        .progress-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+            color: #4b5563;
+        }
+
+        .progress-bar-container {
+            width: 100%;
+            height: 30px;
+            background: #e5e7eb;
+            border-radius: 15px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 0.85rem;
+        }
+
+        .chunks-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+            gap: 5px;
+            max-height: 300px;
+            overflow-y: auto;
+            padding: 10px;
+            background: #f9fafb;
+            border-radius: 10px;
+        }
+
+        .chunk-cell {
+            width: 40px;
+            height: 40px;
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            cursor: default;
+        }
+
+        .chunk-missing {
+            background: #e5e7eb;
+            color: #9ca3af;
+        }
+
+        .chunk-received {
+            background: #34d399;
+            color: white;
+            box-shadow: 0 2px 4px rgba(52, 211, 153, 0.3);
+        }
+
+        .chunk-duplicate {
+            background: #fbbf24;
+            color: white;
+        }
+
+        .button {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .button-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .button-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .button-success {
+            background: #10b981;
+            color: white;
+        }
+
+        .button-success:hover:not(:disabled) {
+            background: #059669;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(16, 185, 129, 0.4);
+        }
+
+        .button-danger {
+            background: #ef4444;
+            color: white;
+        }
+
+        .button-danger:hover:not(:disabled) {
+            background: #dc2626;
+        }
+
+        .file-info {
+            background: #f0fdf4;
+            border: 2px solid #86efac;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        .file-info h3 {
+            color: #166534;
+            margin-bottom: 15px;
+            font-size: 1.2rem;
+        }
+
+        .file-info-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #bbf7d0;
+        }
+
+        .file-info-item:last-child {
+            border-bottom: none;
+        }
+
+        .file-info-label {
+            color: #166534;
+            font-weight: 600;
+        }
+
+        .file-info-value {
+            color: #15803d;
+            font-family: monospace;
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .alert-error {
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #fca5a5;
+        }
+
+        .alert-success {
+            background: #d1fae5;
+            color: #065f46;
+            border: 1px solid #6ee7b7;
+        }
+
+        .alert-warning {
+            background: #fef3c7;
+            color: #92400e;
+            border: 1px solid #fcd34d;
+        }
+
+        .icon {
+            font-size: 1.2rem;
+        }
+
+        .log-container {
+            background: #1f2937;
+            border-radius: 10px;
+            padding: 15px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+        }
+
+        .log-entry {
+            padding: 5px 0;
+            color: #d1d5db;
+        }
+
+        .log-success {
+            color: #34d399;
+        }
+
+        .log-error {
+            color: #f87171;
+        }
+
+        .log-warning {
+            color: #fbbf24;
+        }
+
+        .log-time {
+            color: #9ca3af;
+            margin-right: 10px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .spinner {
+            border: 3px solid #f3f4f6;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        function App() {
+            const [isScanning, setIsScanning] = useState(false);
+            const [status, setStatus] = useState('idle'); // idle, scanning, completed, error
+            const [chunks, setChunks] = useState({});
+            const [totalChunks, setTotalChunks] = useState(0);
+            const [receivedCount, setReceivedCount] = useState(0);
+            const [duplicateCount, setDuplicateCount] = useState(0);
+            const [fileInfo, setFileInfo] = useState(null);
+            const [expectedCRC32, setExpectedCRC32] = useState(null);
+            const [error, setError] = useState(null);
+            const [logs, setLogs] = useState([]);
+            const scannerRef = useRef(null);
+
+            const addLog = (message, type = 'info') => {
+                const time = new Date().toLocaleTimeString();
+                setLogs(prev => [...prev, { time, message, type }].slice(-50));
+            };
+
+            const calcCRC32 = (data) => {
+                const tbl = [];
+                for (let i = 0; i < 256; i++) {
+                    let c = i;
+                    for (let j = 0; j < 8; j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+                    tbl[i] = c;
+                }
+                let crc = 0xFFFFFFFF;
+                for (let i = 0; i < data.length; i++) crc = tbl[(crc ^ data[i]) & 0xFF] ^ (crc >>> 8);
+                return ((crc ^ 0xFFFFFFFF) >>> 0).toString(16).padStart(8, '0');
+            };
+
+            const startScanning = async () => {
+                try {
+                    const html5QrCode = new Html5Qrcode("qr-reader");
+                    scannerRef.current = html5QrCode;
+
+                    await html5QrCode.start(
+                        { facingMode: "environment" },
+                        {
+                            fps: 10,
+                            qrbox: { width: 250, height: 250 }
+                        },
+                        onScanSuccess
+                    );
+
+                    setIsScanning(true);
+                    setStatus('scanning');
+                    addLog('Scanner started', 'success');
+                } catch (err) {
+                    console.error('Scanner error:', err);
+                    setError('Failed to start camera: ' + err.message);
+                    addLog('Scanner failed: ' + err.message, 'error');
+                }
+            };
+
+            const stopScanning = async () => {
+                if (scannerRef.current) {
+                    try {
+                        await scannerRef.current.stop();
+                        setIsScanning(false);
+                        addLog('Scanner stopped', 'warning');
+                    } catch (err) {
+                        console.error('Stop scanner error:', err);
+                    }
+                }
+            };
+
+            const onScanSuccess = (decodedText) => {
+                try {
+                    const data = JSON.parse(decodedText);
+
+                    // Validate structure
+                    if (!data.v || !('index' in data) || !data.total || !data.data) {
+                        addLog('Invalid QR code format', 'error');
+                        return;
+                    }
+
+                    // Set total chunks from first packet
+                    if (totalChunks === 0) {
+                        setTotalChunks(data.total);
+                        addLog(`Receiving file: ${data.total} chunks total`, 'success');
+                    }
+
+                    // Store CRC32 from first packet
+                    if (data.index === 0 && data.crc32) {
+                        setExpectedCRC32(data.crc32);
+                        addLog(`CRC32 checksum: ${data.crc32}`, 'info');
+                    }
+
+                    // Check if chunk already received
+                    setChunks(prev => {
+                        if (prev[data.index]) {
+                            setDuplicateCount(c => c + 1);
+                            addLog(`Chunk ${data.index + 1} (duplicate)`, 'warning');
+                            return prev;
+                        }
+
+                        addLog(`Chunk ${data.index + 1}/${data.total} received`, 'success');
+                        setReceivedCount(c => c + 1);
+
+                        return {
+                            ...prev,
+                            [data.index]: data.data
+                        };
+                    });
+
+                } catch (err) {
+                    console.error('Parse error:', err);
+                    addLog('Failed to parse QR code', 'error');
+                }
+            };
+
+            const assembleAndDownload = async () => {
+                try {
+                    addLog('Assembling file...', 'info');
+
+                    // Check if all chunks received
+                    const missingChunks = [];
+                    for (let i = 0; i < totalChunks; i++) {
+                        if (!chunks[i]) missingChunks.push(i);
+                    }
+
+                    if (missingChunks.length > 0) {
+                        setError(`Missing chunks: ${missingChunks.join(', ')}`);
+                        addLog(`Missing ${missingChunks.length} chunks`, 'error');
+                        return;
+                    }
+
+                    // Assemble chunks in order
+                    const binaryStrings = [];
+                    for (let i = 0; i < totalChunks; i++) {
+                        binaryStrings.push(atob(chunks[i]));
+                    }
+                    const fullBinary = binaryStrings.join('');
+
+                    // Convert to Uint8Array
+                    const bytes = new Uint8Array(fullBinary.length);
+                    for (let i = 0; i < fullBinary.length; i++) {
+                        bytes[i] = fullBinary.charCodeAt(i);
+                    }
+
+                    // Calculate CRC32
+                    const calculatedCRC32 = calcCRC32(bytes);
+                    addLog(`Calculated CRC32: ${calculatedCRC32}`, 'info');
+
+                    // Verify CRC32
+                    if (expectedCRC32 && calculatedCRC32 !== expectedCRC32.toLowerCase()) {
+                        setError(`CRC32 mismatch! Expected: ${expectedCRC32}, Got: ${calculatedCRC32}`);
+                        addLog('CRC32 verification FAILED', 'error');
+                        setStatus('error');
+                        return;
+                    }
+
+                    addLog('CRC32 verification PASSED', 'success');
+
+                    // Create blob and download
+                    const blob = new Blob([bytes], { type: 'application/octet-stream' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `received_file_${Date.now()}`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+
+                    setFileInfo({
+                        size: bytes.length,
+                        chunks: totalChunks,
+                        crc32: calculatedCRC32
+                    });
+
+                    setStatus('completed');
+                    addLog('File downloaded successfully!', 'success');
+
+                    // Stop scanner
+                    stopScanning();
+
+                } catch (err) {
+                    console.error('Assembly error:', err);
+                    setError('Failed to assemble file: ' + err.message);
+                    addLog('Assembly failed: ' + err.message, 'error');
+                    setStatus('error');
+                }
+            };
+
+            const reset = () => {
+                setChunks({});
+                setTotalChunks(0);
+                setReceivedCount(0);
+                setDuplicateCount(0);
+                setFileInfo(null);
+                setExpectedCRC32(null);
+                setError(null);
+                setStatus('idle');
+                setLogs([]);
+                addLog('Reset completed', 'info');
+            };
+
+            const progress = totalChunks > 0 ? (receivedCount / totalChunks) * 100 : 0;
+            const isComplete = totalChunks > 0 && receivedCount === totalChunks;
+
+            useEffect(() => {
+                if (isComplete && status === 'scanning') {
+                    addLog('All chunks received!', 'success');
+                }
+            }, [isComplete]);
+
+            useEffect(() => {
+                return () => {
+                    if (scannerRef.current) {
+                        scannerRef.current.stop().catch(console.error);
+                    }
+                };
+            }, []);
+
+            return (
+                <div className="container">
+                    <div className="header">
+                        <h1>📱 QR Code File Receiver</h1>
+                        <p>Scan QR codes to receive files wirelessly</p>
+                    </div>
+
+                    <div className="main-content">
+                        {/* Left Column - Scanner */}
+                        <div className="card">
+                            <h2>
+                                <span>📷</span>
+                                <span>Camera Scanner</span>
+                            </h2>
+
+                            <div className={`status-badge status-${status}`}>
+                                {status === 'idle' && '⚪ Ready'}
+                                {status === 'scanning' && '🔵 Scanning...'}
+                                {status === 'completed' && '✅ Completed'}
+                                {status === 'error' && '❌ Error'}
+                            </div>
+
+                            <div className="scanner-container">
+                                <div id="qr-reader"></div>
+                                {!isScanning && (
+                                    <div className="scanner-overlay">
+                                        Click "Start Scanner" to begin
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="controls">
+                                {!isScanning ? (
+                                    <button
+                                        className="button button-primary"
+                                        onClick={startScanning}
+                                        disabled={status === 'completed'}
+                                    >
+                                        <span>▶️</span>
+                                        <span>Start Scanner</span>
+                                    </button>
+                                ) : (
+                                    <button
+                                        className="button button-danger"
+                                        onClick={stopScanning}
+                                    >
+                                        <span>⏸️</span>
+                                        <span>Stop Scanner</span>
+                                    </button>
+                                )}
+                                <button
+                                    className="button button-primary"
+                                    onClick={reset}
+                                    style={{ flex: '0 0 auto', width: 'auto', padding: '15px 25px' }}
+                                >
+                                    🔄
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Right Column - Progress */}
+                        <div className="card">
+                            <h2>
+                                <span>📊</span>
+                                <span>Reception Progress</span>
+                            </h2>
+
+                            {error && (
+                                <div className="alert alert-error">
+                                    <span className="icon">⚠️</span>
+                                    <span>{error}</span>
+                                </div>
+                            )}
+
+                            <div className="stats-grid">
+                                <div className="stat-item">
+                                    <div className="stat-label">Total Chunks</div>
+                                    <div className="stat-value">{totalChunks || '-'}</div>
+                                </div>
+                                <div className="stat-item">
+                                    <div className="stat-label">Received</div>
+                                    <div className="stat-value">{receivedCount}</div>
+                                </div>
+                                <div className="stat-item">
+                                    <div className="stat-label">Progress</div>
+                                    <div className="stat-value">{progress.toFixed(0)}%</div>
+                                </div>
+                                <div className="stat-item">
+                                    <div className="stat-label">Duplicates</div>
+                                    <div className="stat-value">{duplicateCount}</div>
+                                </div>
+                            </div>
+
+                            <div className="progress-section">
+                                <div className="progress-label">
+                                    <span>Reception Progress</span>
+                                    <span>{receivedCount} / {totalChunks || 0}</span>
+                                </div>
+                                <div className="progress-bar-container">
+                                    <div className="progress-bar" style={{ width: `${progress}%` }}>
+                                        {progress > 10 && `${progress.toFixed(0)}%`}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {totalChunks > 0 && (
+                                <div>
+                                    <h3 style={{ marginBottom: '10px', fontSize: '1rem', color: '#4b5563' }}>
+                                        Chunks Map
+                                    </h3>
+                                    <div className="chunks-grid">
+                                        {Array.from({ length: totalChunks }, (_, i) => (
+                                            <div
+                                                key={i}
+                                                className={`chunk-cell ${chunks[i] ? 'chunk-received' : 'chunk-missing'}`}
+                                                title={`Chunk ${i + 1}${chunks[i] ? ' - Received' : ' - Missing'}`}
+                                            >
+                                                {i + 1}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {isComplete && (
+                                <button
+                                    className="button button-success"
+                                    onClick={assembleAndDownload}
+                                    style={{ marginTop: '20px' }}
+                                >
+                                    <span>💾</span>
+                                    <span>Verify & Download File</span>
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Bottom Section - Logs & File Info */}
+                    <div className="card">
+                        <h2>
+                            <span>📝</span>
+                            <span>Activity Log</span>
+                        </h2>
+                        <div className="log-container">
+                            {logs.length === 0 ? (
+                                <div className="log-entry">No activity yet...</div>
+                            ) : (
+                                logs.map((log, i) => (
+                                    <div key={i} className={`log-entry log-${log.type}`}>
+                                        <span className="log-time">[{log.time}]</span>
+                                        <span>{log.message}</span>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+
+                    {fileInfo && (
+                        <div className="file-info">
+                            <h3>✅ File Received Successfully</h3>
+                            <div className="file-info-item">
+                                <span className="file-info-label">File Size:</span>
+                                <span className="file-info-value">
+                                    {fileInfo.size < 1024
+                                        ? `${fileInfo.size} bytes`
+                                        : fileInfo.size < 1024 * 1024
+                                        ? `${(fileInfo.size / 1024).toFixed(2)} KB`
+                                        : `${(fileInfo.size / (1024 * 1024)).toFixed(2)} MB`
+                                    }
+                                </span>
+                            </div>
+                            <div className="file-info-item">
+                                <span className="file-info-label">Total Chunks:</span>
+                                <span className="file-info-value">{fileInfo.chunks}</span>
+                            </div>
+                            <div className="file-info-item">
+                                <span className="file-info-label">CRC32 Checksum:</span>
+                                <span className="file-info-value">{fileInfo.crc32.toUpperCase()}</span>
+                            </div>
+                            <div className="file-info-item">
+                                <span className="file-info-label">Status:</span>
+                                <span className="file-info-value">✅ Verified</span>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>

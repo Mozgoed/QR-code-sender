@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File to QR Code Sender</title>
+    <script src='qrcode.js'></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; background: #f5f5f5; }
+        .container { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #333; margin-bottom: 20px; }
+        h3 { margin-bottom: 10px; }
+        #drop { margin: 20px 0; padding: 40px 20px; border: 2px dashed #ccc; border-radius: 5px; text-align: center; cursor: pointer; transition: all 0.3s; }
+        #drop:hover { border-color: #4CAF50; background: #f9f9f9; }
+        #drop.over { border-color: #4CAF50; background: #e8f5e9; }
+        .info, .settings { margin: 20px 0; padding: 15px; background: #f0f0f0; border-radius: 5px; }
+        .settings { background: #e8f5e9; }
+        .info p, .settings p { margin: 5px 0; }
+        .settings label { display: inline-block; width: 200px; }
+        .settings input, .settings select { padding: 5px; }
+        input[type=number] { width: 100px; }
+        select { width: 110px; }
+        #qr { text-align: center; margin: 20px 0; min-height: 300px; display: flex; justify-content: center; align-items: center; }
+        .controls { display: flex; justify-content: center; gap: 10px; margin: 20px 0; }
+        button { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; background: #4CAF50; color: white; transition: background 0.3s; }
+        button:hover { background: #45a049; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .pause { background: #ff9800; }
+        .pause:hover { background: #e68900; }
+        #prog { margin: 10px 0; font-weight: bold; font-size: 18px; text-align: center; color: #4CAF50; }
+        .crc { font-family: monospace; color: #2196F3; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>File to QR Code Sender</h1>
+
+        <div id="drop">
+            <h3>Select or drag & drop a file</h3>
+            <input type="file" id="file">
+            <p style="margin-top:10px;color:#999;font-size:14px">Click to browse or drag a file here</p>
+        </div>
+
+        <div class="settings">
+            <h3>Settings</h3>
+            <p><label>Chunk size (bytes):</label><input type="number" id="chunk" value="1000" min="100" max="2000" step="50"></p>
+            <p><label>Display interval (ms):</label><input type="number" id="interval" value="2000" min="500" max="10000" step="50"></p>
+            <p><label>Error correction level:</label><select id="ecc">
+                <option value="L">L (Low - 7%)</option>
+                <option value="M">M (Medium - 15%)</option>
+                <option value="Q">Q (Quartile - 25%)</option>
+                <option value="H">H (High - 30%)</option>
+            </select></p>
+            <p><label>Cycle transmission:</label><input type="checkbox" id="cycle" checked></p>
+        </div>
+
+        <div class="info" id="info" hidden>
+            <h3>File Information</h3>
+            <p><b>File name:</b> <span id="name"></span></p>
+            <p><b>File size:</b> <span id="size"></span></p>
+            <p><b>Total chunks:</b> <span id="total"></span></p>
+            <p><b>CRC32 Checksum:</b> <span id="crc" class="crc"></span></p>
+        </div>
+
+        <div class="controls">
+            <button id="start" disabled>Start / Restart</button>
+            <button id="pause" class="pause" disabled>Pause</button>
+            <button id="prev" disabled>Previous</button>
+            <button id="next" disabled>Next</button>
+        </div>
+
+        <div id="prog"></div>
+        <div id="qr"><p style="color:#999">Select a file to begin</p></div>
+    </div>
+
+    <script>
+        const $ = id => document.getElementById(id);
+        let fileData, chunks = [], idx = 0, timer, paused = false, crc32;
+
+        const file = $('file'), drop = $('drop'), qr = $('qr');
+        const start = $('start'), pause = $('pause'), prev = $('prev'), next = $('next');
+        const info = $('info'), prog = $('prog');
+
+        file.onchange = handleFile;
+        drop.onclick = () => file.click();
+        drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
+        drop.ondragleave = e => { e.preventDefault(); drop.classList.remove('over'); };
+        drop.ondrop = e => {
+            e.preventDefault();
+            drop.classList.remove('over');
+            if (e.dataTransfer.files.length) {
+                file.files = e.dataTransfer.files;
+                handleFile();
+            }
+        };
+
+        start.onclick = startTx;
+        pause.onclick = () => { paused = !paused; pause.textContent = paused ? 'Resume' : 'Pause'; };
+        prev.onclick = () => { if (idx > 0) show(--idx); };
+        next.onclick = () => { if (idx < chunks.length - 1) show(++idx); };
+
+        function calcCRC32(data) {
+            const tbl = [];
+            for (let i = 0; i < 256; i++) {
+                let c = i;
+                for (let j = 0; j < 8; j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+                tbl[i] = c;
+            }
+            let crc = 0xFFFFFFFF;
+            for (let i = 0; i < data.length; i++) crc = tbl[(crc ^ data[i]) & 0xFF] ^ (crc >>> 8);
+            return ((crc ^ 0xFFFFFFFF) >>> 0).toString(16).padStart(8, '0');
+        }
+
+        function handleFile() {
+            const f = file.files[0];
+            if (!f) return;
+            const reader = new FileReader();
+            reader.onload = e => {
+                fileData = new Uint8Array(e.target.result);
+                crc32 = calcCRC32(fileData);
+                const sz = +$('chunk').value;
+                chunks = [];
+                for (let i = 0; i < fileData.length; i += sz) chunks.push(fileData.slice(i, i + sz));
+
+                $('name').textContent = f.name;
+                $('size').textContent = fmtSize(f.size);
+                $('total').textContent = chunks.length;
+                $('crc').textContent = crc32.toUpperCase();
+                info.hidden = false;
+                start.disabled = false;
+                idx = 0;
+                show(0);
+            };
+            reader.readAsArrayBuffer(f);
+        }
+
+        function startTx() {
+            if (!fileData) return;
+            if (timer) clearInterval(timer);
+
+            const sz = +$('chunk').value;
+            chunks = [];
+            for (let i = 0; i < fileData.length; i += sz) chunks.push(fileData.slice(i, i + sz));
+            $('total').textContent = chunks.length;
+
+            idx = 0;
+            paused = false;
+            pause.textContent = 'Pause';
+            pause.disabled = prev.disabled = next.disabled = false;
+
+            show(idx);
+            timer = setInterval(() => {
+                if (!paused) {
+                    idx++;
+                    if (idx >= chunks.length) {
+                        if ($('cycle').checked) {
+                            idx = 0;
+                            show(idx);
+                        } else {
+                            clearInterval(timer);
+                            timer = null;
+                            pause.disabled = true;
+                            pause.textContent = 'Pause';
+                            paused = false;
+                            prog.textContent = `Transmission completed! (${chunks.length} chunks sent)`;
+                        }
+                    } else show(idx);
+                }
+            }, +$('interval').value);
+        }
+
+        function show(i) {
+            if (!chunks[i]) return;
+            const meta = { v: "1.0", index: i, total: chunks.length, data: toB64(chunks[i]) };
+            if (i === 0 && crc32) meta.crc32 = crc32;
+
+            try {
+                const q = qrcode(0, $('ecc').value);
+                q.addData(JSON.stringify(meta));
+                q.make();
+                qr.innerHTML = q.createImgTag(5);
+            } catch (e) {
+                console.error('QR error:', e);
+                qr.innerHTML = `<p style="color:red">Error: Chunk too large. Reduce chunk size or lower error correction.</p>`;
+            }
+            prog.textContent = `Chunk ${i + 1} of ${chunks.length}`;
+        }
+
+        function toB64(buf) {
+            let bin = '';
+            const bytes = new Uint8Array(buf);
+            for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+            return btoa(bin);
+        }
+
+        function fmtSize(b) {
+            if (b < 1024) return b + ' bytes';
+            if (b < 1024 * 1024) return (b / 1024).toFixed(2) + ' KB';
+            return (b / (1024 * 1024)).toFixed(2) + ' MB';
+        }
+    </script>
+</body>
+</html>
